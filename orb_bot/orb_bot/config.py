@@ -59,6 +59,9 @@ class SessionConfig:
     trading_window_start: time = field(default_factory=lambda: time(9, 45))
     trading_window_end: time = field(default_factory=lambda: time(11, 30))
     max_trades_per_session: int = 1
+    # Any open position is force-closed at this time regardless of P&L -
+    # trades are never held past this, win or lose.
+    force_close_time: time = field(default_factory=lambda: time(15, 55))
 
     def __post_init__(self) -> None:
         if self.opening_range_start >= self.opening_range_end:
@@ -73,6 +76,11 @@ class SessionConfig:
             raise ConfigError(
                 "session.trading_window_start should be >= opening_range_end "
                 "(the opening range must finish before you start trading it)"
+            )
+        if self.force_close_time < self.trading_window_end:
+            raise ConfigError(
+                "session.force_close_time must be >= trading_window_end "
+                "(can't flatten a trade before the window that opens it closes)"
             )
         if self.max_trades_per_session < 1:
             raise ConfigError("session.max_trades_per_session must be >= 1")
@@ -174,6 +182,7 @@ def load_config(config_path: str | Path = "config.yaml", env_path: str | Path = 
         "opening_range_end",
         "trading_window_start",
         "trading_window_end",
+        "force_close_time",
     ):
         if key in session_kwargs and session_kwargs[key] is not None:
             session_kwargs[key] = _parse_hhmm(str(session_kwargs[key]), f"session.{key}")

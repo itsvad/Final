@@ -5,8 +5,11 @@ so results aren't over-trusted):
   - Entries fill exactly at the calculated trigger price (no slippage).
   - When a bar's range covers both the stop and the target, the stop is
     assumed to have been hit first (conservative).
-  - If neither stop nor target is hit by the last bar of the session
-    day, the trade is marked-to-market closed at that bar's close.
+  - Any trade still open at session.force_close_time is flattened at
+    that bar's close price, regardless of P&L.
+  - If the day's data ends before force_close_time is reached (a
+    partial/incomplete feed), the trade is marked-to-market closed at
+    the last available bar's close instead.
 """
 
 from __future__ import annotations
@@ -29,7 +32,7 @@ class CompletedTrade:
     stop_price: float
     target_price: float
     exit_price: float
-    exit_reason: str  # "target" | "stop" | "eod_close"
+    exit_reason: str  # "target" | "stop" | "force_flatten" | "eod_close"
     contracts: int
     risk_per_contract_usd: float
     pnl_usd: float
@@ -50,6 +53,12 @@ class SimExecutor(TradeExecutor):
 
     def no_trade_today(self, session_date: date, reason: str) -> None:
         self.no_trade_days.append((session_date, reason))
+
+    def flatten(self, session_date: date, price: float, reason: str) -> None:
+        if self._open is None:
+            return
+        signal: TradeSignal = self._open["signal"]
+        self._finish(signal, price, "force_flatten")
 
     def has_open_trade(self) -> bool:
         return self._open is not None
@@ -77,6 +86,10 @@ class SimExecutor(TradeExecutor):
         self._finish(signal, exit_price, exit_reason)
 
     def force_close_eod(self, close_price: float) -> None:
+        """Fallback for when the day's data ends before force_close_time is
+        reached (e.g. an incomplete/partial data feed) - the strategy itself
+        already flattens open trades at session.force_close_time via
+        `flatten()` when there's data covering that time."""
         if self._open is None:
             return
         signal: TradeSignal = self._open["signal"]
@@ -122,7 +135,7 @@ def run_backtest(config: BotConfig, spec: ContractSpec, bars_df) -> "BacktestRep
         last_close = None
         for bar in bars:
             ts, o, h, l, c = bar["timestamp"], bar["open"], bar["high"], bar["low"], bar["close"]
-            strategy.on_market_data(ts, high=h, low=l, open_=o)
+            strategy.on_market_data(ts, high=h, low=l, open_=o, close=c)
             executor.resolve_bar(h, l, c)
             last_close = c
 

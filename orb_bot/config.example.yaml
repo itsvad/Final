@@ -36,6 +36,9 @@ session:
   trading_window_end: "11:30"
   # Only take this many trades per NY session, then stand down for the day.
   max_trades_per_session: 1
+  # Any open trade is force-closed at this time regardless of profit or
+  # loss - trades are never held past this. Must be >= trading_window_end.
+  force_close_time: "15:55"
 
 strategy:
   # Enter this many ticks beyond the opening-range high/low.

@@ -20,12 +20,16 @@ class FakeExecutor:
     def __init__(self):
         self.signals = []
         self.no_trades = []
+        self.flattens = []
 
     def enter(self, signal):
         self.signals.append(signal)
 
     def no_trade_today(self, session_date, reason):
         self.no_trades.append((session_date, reason))
+
+    def flatten(self, session_date, price, reason):
+        self.flattens.append((session_date, price, reason))
 
 
 def make_config(**overrides):
@@ -36,6 +40,7 @@ def make_config(**overrides):
         trading_window_start=time(9, 45),
         trading_window_end=time(11, 30),
         max_trades_per_session=1,
+        force_close_time=time(15, 55),
     )
     session_kwargs.update(overrides.pop("session", {}))
 
@@ -214,3 +219,59 @@ def test_configurable_window_and_rr_ratio():
     assert signal.stop_price == pytest.approx(4993.5)  # 4994 - 2*0.25
     risk_distance = signal.entry_price - signal.stop_price
     assert signal.target_price == pytest.approx(signal.entry_price + risk_distance * 2.0)
+
+
+def test_open_trade_is_flattened_at_force_close_time():
+    executor = FakeExecutor()
+    config = make_config(session={"force_close_time": time(15, 55)})
+    strat = OrbStrategy(config, MES_SPEC, executor)
+
+    strat.on_market_data(ny(9, 30), high=5000.0, low=4995.0)
+    strat.on_market_data(ny(9, 44, 59), high=5002.0, low=4994.0)
+    strat.on_market_data(ny(9, 50), high=5002.50, low=5002.25)  # long breakout, trade open
+    assert len(executor.signals) == 1
+    assert len(executor.flattens) == 0
+
+    # Trade never hits stop/target - still open going into the close
+    strat.on_market_data(ny(15, 54), high=5050.0, low=5040.0)
+    assert len(executor.flattens) == 0
+
+    strat.on_market_data(ny(15, 55), high=5045.0, low=5044.0, close=5044.5)
+    assert len(executor.flattens) == 1
+    session_date, price, reason = executor.flattens[0]
+    assert price == pytest.approx(5044.5)
+    assert "flatten" in reason.lower()
+
+    # Flatten only fires once even with more ticks after the close time
+    strat.on_market_data(ny(15, 58), high=5046.0, low=5045.0, close=5045.5)
+    assert len(executor.flattens) == 1
+
+
+def test_no_flatten_call_when_no_trade_was_taken():
+    executor = FakeExecutor()
+    config = make_config()
+    strat = OrbStrategy(config, MES_SPEC, executor)
+
+    strat.on_market_data(ny(9, 30), high=5000.0, low=4995.0)
+    strat.on_market_data(ny(9, 44, 59), high=5002.0, low=4994.0)
+    strat.on_market_data(ny(11, 30), high=4999.0, low=4998.0)  # window closes, no breakout
+    assert len(executor.no_trades) == 1
+
+    strat.on_market_data(ny(15, 55), high=4999.0, low=4998.0, close=4998.5)
+    assert len(executor.flattens) == 0
+
+
+def test_force_close_time_is_configurable():
+    executor = FakeExecutor()
+    config = make_config(session={"force_close_time": time(13, 0)})
+    strat = OrbStrategy(config, MES_SPEC, executor)
+
+    strat.on_market_data(ny(9, 30), high=5000.0, low=4995.0)
+    strat.on_market_data(ny(9, 44, 59), high=5002.0, low=4994.0)
+    strat.on_market_data(ny(9, 50), high=5002.50, low=5002.25)  # long breakout
+
+    strat.on_market_data(ny(12, 59), high=5010.0, low=5009.0, close=5009.5)
+    assert len(executor.flattens) == 0
+
+    strat.on_market_data(ny(13, 0), high=5011.0, low=5010.0, close=5010.5)
+    assert len(executor.flattens) == 1

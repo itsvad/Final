@@ -27,6 +27,8 @@ is adjustable via `config.yaml` - nothing is hardcoded.
    stands down for the rest of the day.
 6. If no breakout happens before the trading window closes, no trade is
    taken for that day.
+7. Any open trade is force-closed at **3:55 PM ET** (configurable) regardless
+   of profit or loss - trades are never held past market close.
 
 ## Setup
 
@@ -55,6 +57,7 @@ Every field is documented inline in `config.example.yaml`. The main knobs:
 | `session` | `opening_range_start/end` | Window used to mark the OR high/low |
 | `session` | `trading_window_start/end` | Window during which breakouts are traded |
 | `session` | `max_trades_per_session` | Trades allowed per NY session (default 1) |
+| `session` | `force_close_time` | Any open trade is flattened here regardless of P&L (default 3:55 PM ET) |
 | `strategy` | `entry_trigger_ticks` | Ticks beyond OR high/low to trigger entry |
 | `strategy` | `stop_ticks` | Ticks beyond the opposite side for the stop |
 | `strategy` | `reward_risk_ratio` | Target distance = risk distance * this |

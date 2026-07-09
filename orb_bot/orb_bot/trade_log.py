@@ -26,6 +26,7 @@ FIELDNAMES = [
     "total_risk_usd",
     "or_high",
     "or_low",
+    "flatten_price",
     "note",
 ]
 
@@ -61,6 +62,19 @@ class TradeLog:
                 "logged_at": datetime.now(timezone.utc).isoformat(),
                 "session_date": session_date.isoformat() if session_date else "",
                 "event": "no_trade",
+                "note": reason,
+            }
+        )
+
+    def log_flatten(self, session_date, price: float, reason: str) -> None:
+        from datetime import datetime, timezone
+
+        self._write_row(
+            {
+                "logged_at": datetime.now(timezone.utc).isoformat(),
+                "session_date": session_date.isoformat() if session_date else "",
+                "event": "flatten",
+                "flatten_price": price,
                 "note": reason,
             }
         )

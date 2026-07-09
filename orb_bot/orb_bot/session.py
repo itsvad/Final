@@ -55,3 +55,6 @@ class SessionClock:
     def before_opening_range(self, ts: datetime) -> bool:
         t = self._time_of(ts)
         return t < self.config.opening_range_start
+
+    def at_or_after_force_close(self, ts: datetime) -> bool:
+        return self._time_of(ts) >= self.config.force_close_time

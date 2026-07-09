@@ -35,25 +35,29 @@ class LiveRunner:
         self._last_price: float | None = None
         self._running = False
 
-    def _resolve_contract(self) -> str:
+    def _resolve_contract(self) -> tuple[str, int]:
         if self.config.contract.contract_name:
             contract = self.rest.get_contract_by_name(self.config.contract.contract_name)
         else:
             contract = self.rest.find_front_month_contract(self.config.contract.symbol)
         name = contract.get("name") or contract.get("Symbol")
-        logger.info("Resolved contract: %s", name)
-        return name
+        contract_id = contract["id"]
+        logger.info("Resolved contract: %s (id=%s)", name, contract_id)
+        return name, contract_id
 
     def _on_price(self, ts: datetime, price: float) -> None:
         self._last_price = price
-        self.strategy.on_market_data(ts, high=price, low=price)
+        self.strategy.on_market_data(ts, high=price, low=price, close=price)
 
     def _heartbeat_loop(self) -> None:
         while self._running:
             time_module.sleep(HEARTBEAT_SECONDS)
             if self._last_price is not None:
                 self.strategy.on_market_data(
-                    datetime.now(timezone.utc), high=self._last_price, low=self._last_price
+                    datetime.now(timezone.utc),
+                    high=self._last_price,
+                    low=self._last_price,
+                    close=self._last_price,
                 )
 
     def _token_renew_loop(self) -> None:
@@ -71,13 +75,14 @@ class LiveRunner:
         self.rest.authenticate()
         account_id = self.rest.resolve_account_id(self.config.account.account_spec)
         account_spec = self.config.account.account_spec or self.rest.list_accounts()[0]["name"]
-        contract_name = self._resolve_contract()
+        contract_name, contract_id = self._resolve_contract()
 
         executor = TradovateExecutor(
             rest=self.rest,
             trade_log=self.trade_log,
             account_id=account_id,
             account_spec=account_spec,
+            contract_id=contract_id,
             contract_name=contract_name,
             entry_order_type=self.config.strategy.entry_order_type,
             stop_limit_offset_ticks=self.config.strategy.stop_limit_offset_ticks,

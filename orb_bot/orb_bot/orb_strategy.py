@@ -17,6 +17,9 @@ decoupled from Tradovate / live vs. backtest concerns:
     signal is emitted per session (configurable).
   - If no breakout occurs before the trading window ends, it stands
     down for the rest of the day.
+  - Regardless of P&L, any open trade is force-flattened at
+    `session.force_close_time` (default 3:55 PM ET) - trades are never
+    held past that time.
 
 It knows nothing about HTTP, WebSockets, or Tradovate order types -
 that lives in the executor implementation (live TradovateExecutor or
@@ -60,6 +63,8 @@ class TradeExecutor(Protocol):
 
     def no_trade_today(self, session_date: date, reason: str) -> None: ...
 
+    def flatten(self, session_date: date, price: float, reason: str) -> None: ...
+
 
 @dataclass
 class _DayState:
@@ -70,6 +75,7 @@ class _DayState:
     trades_taken: int = 0
     standing_down: bool = False       # no more signals will be evaluated today
     window_closed_logged: bool = False
+    flattened: bool = False           # force-close at session.force_close_time already handled
 
 
 class OrbStrategy:
@@ -112,9 +118,24 @@ class OrbStrategy:
         high: float,
         low: float,
         open_: Optional[float] = None,
+        close: Optional[float] = None,
     ) -> None:
         self._ensure_day(ts)
         state = self.state
+
+        if not state.flattened and self.clock.at_or_after_force_close(ts):
+            state.flattened = True
+            state.standing_down = True
+            if state.trades_taken > 0:
+                flatten_price = close if close is not None else (high + low) / 2
+                logger.info(
+                    "Force-flattening open trade for %s at %.4f (%s)",
+                    state.session_date,
+                    flatten_price,
+                    self.config.session.force_close_time,
+                )
+                self.executor.flatten(state.session_date, flatten_price, "session flatten time reached")
+            return
 
         if state.standing_down:
             return

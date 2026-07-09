@@ -223,6 +223,20 @@ class TradovateREST:
         if resp.status_code != 200:
             logger.warning("Failed to cancel order %s: %s", order_id, resp.text)
 
+    def liquidate_position(self, account_id: int, contract_id: int) -> None:
+        """Flatten any open position for this account/contract at market.
+
+        Tradovate cancels the position's still-working bracket orders as
+        part of liquidation, so callers don't need to cancel them separately.
+        """
+        resp = self.session.post(
+            f"{self.base_url}/order/liquidateposition",
+            json={"accountId": account_id, "contractId": contract_id},
+            timeout=15,
+        )
+        if resp.status_code != 200:
+            logger.warning("Failed to liquidate position (account=%s contract=%s): %s", account_id, contract_id, resp.text)
+
 
 class TradovateQuoteStream:
     """Streams last-traded price for one contract symbol via the market-data WS."""
@@ -321,6 +335,7 @@ class TradovateExecutor(TradeExecutor):
         trade_log: TradeLog,
         account_id: int,
         account_spec: str,
+        contract_id: int,
         contract_name: str,
         entry_order_type: str,
         stop_limit_offset_ticks: int,
@@ -331,11 +346,13 @@ class TradovateExecutor(TradeExecutor):
         self.trade_log = trade_log
         self.account_id = account_id
         self.account_spec = account_spec
+        self.contract_id = contract_id
         self.contract_name = contract_name
         self.entry_order_type = entry_order_type
         self.stop_limit_offset_ticks = stop_limit_offset_ticks
         self.tick_size = tick_size
         self.dry_run = dry_run
+        self._working_entry_order_id: Optional[int] = None
 
     def enter(self, signal: TradeSignal) -> None:
         action = "Buy" if signal.direction == "long" else "Sell"
@@ -362,7 +379,7 @@ class TradovateExecutor(TradeExecutor):
             )
             return
 
-        self.rest.place_oso_bracket(
+        result = self.rest.place_oso_bracket(
             account_id=self.account_id,
             account_spec=self.account_spec,
             symbol=self.contract_name,
@@ -374,7 +391,23 @@ class TradovateExecutor(TradeExecutor):
             bracket_stop_price=signal.stop_price,
             bracket_target_price=signal.target_price,
         )
+        self._working_entry_order_id = result.get("orderId")
 
     def no_trade_today(self, session_date: date, reason: str) -> None:
         self.trade_log.log_no_trade(session_date, reason)
         logger.info("No trade for %s: %s", session_date, reason)
+
+    def flatten(self, session_date: date, price: float, reason: str) -> None:
+        self.trade_log.log_flatten(session_date, price, reason)
+
+        if self.dry_run:
+            logger.info("[DRY RUN] Would flatten %s at ~%.4f: %s", self.contract_name, price, reason)
+            return
+
+        logger.info("Flattening %s: %s", self.contract_name, reason)
+        if self._working_entry_order_id is not None:
+            # Harmless if the entry already filled or was already cancelled -
+            # cancelling a non-working order is a no-op on Tradovate's side.
+            self.rest.cancel_order(self._working_entry_order_id)
+            self._working_entry_order_id = None
+        self.rest.liquidate_position(self.account_id, self.contract_id)

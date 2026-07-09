@@ -2,6 +2,7 @@ from datetime import datetime, time
 from zoneinfo import ZoneInfo
 
 import pandas as pd
+import pytest
 
 from orb_bot.backtest.engine import run_backtest
 from orb_bot.config import (
@@ -20,7 +21,7 @@ NY = ZoneInfo("America/New_York")
 MES_SPEC = ContractSpec(symbol="MES", description="Micro E-mini S&P 500", tick_size=0.25, tick_value=1.25)
 
 
-def make_config(risk_amount_usd=600.0):
+def make_config(risk_amount_usd=600.0, force_close_time=time(15, 55)):
     return BotConfig(
         account=AccountConfig(),
         contract=ContractConfig(symbol="MES"),
@@ -30,6 +31,7 @@ def make_config(risk_amount_usd=600.0):
             trading_window_start=time(9, 45),
             trading_window_end=time(11, 30),
             max_trades_per_session=1,
+            force_close_time=force_close_time,
         ),
         strategy=StrategyConfig(reward_risk_ratio=1.0, entry_trigger_ticks=1, stop_ticks=1),
         risk=RiskConfig(risk_amount_usd=risk_amount_usd, max_contracts=10, min_contracts=1),
@@ -136,3 +138,39 @@ def test_backtest_multiple_days_independent_sessions():
     assert len(report.trades) == 1
     assert len(report.no_trade_days) == 1
     assert report.total_sessions == 2
+
+
+def test_open_trade_flattened_at_force_close_time_not_held_to_eod():
+    rows = [
+        bar(9, 9, 30, 5000, 5002, 4995, 5000),
+        bar(9, 9, 44, 5000, 5002, 4994, 5000),
+        bar(9, 9, 50, 5002.3, 5003.0, 5002.25, 5002.9),  # breakout long, never hits stop/target
+        bar(9, 10, 0, 5003.0, 5008.0, 5002.5, 5006.0),
+        bar(9, 12, 0, 5006.0, 5009.0, 5005.0, 5007.5),   # force_close_time (12:00) hit here
+        bar(9, 15, 0, 5007.5, 5020.0, 5007.0, 5019.0),   # should never be reached - already flat
+    ]
+    df = pd.DataFrame(rows)
+    config = make_config(force_close_time=time(12, 0))
+    report = run_backtest(config, MES_SPEC, df)
+
+    assert len(report.trades) == 1
+    trade = report.trades[0]
+    assert trade.exit_reason == "force_flatten"
+    assert trade.exit_price == pytest.approx(5007.5)  # close of the 12:00 bar
+
+
+def test_force_close_time_defaults_to_355pm_and_does_not_cut_off_normal_window():
+    # With the default 3:55pm flatten time, a trade resolved well before
+    # that (target hit inside the normal trading window) is unaffected.
+    rows = [
+        bar(9, 9, 30, 5000, 5002, 4995, 5000),
+        bar(9, 9, 44, 5000, 5002, 4994, 5000),
+        bar(9, 9, 50, 5002.3, 5003.0, 5002.25, 5002.9),
+        bar(9, 10, 0, 5003.0, 5011.0, 5002.5, 5010.0),  # target hit well before 3:55pm
+    ]
+    df = pd.DataFrame(rows)
+    config = make_config()  # default force_close_time = 15:55
+    report = run_backtest(config, MES_SPEC, df)
+
+    assert len(report.trades) == 1
+    assert report.trades[0].exit_reason == "target"
