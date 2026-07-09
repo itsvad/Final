@@ -80,6 +80,29 @@ opening range and log signals for several sessions on the demo
 environment. The bot re-authenticates hourly and reconnects its
 market-data stream automatically; stop it with Ctrl+C.
 
+There's no interface inside Tradovate itself for this - it's a headless
+process. Once it places an order it shows up in your normal Tradovate
+Trader app exactly like a manual order (position, working bracket,
+fills); the bot doesn't replace that, it just places orders into it.
+
+## Dashboard
+
+While `run_live.py` is running, start the local dashboard alongside it to
+watch the bot's state in a browser instead of raw terminal logs:
+
+```bash
+python scripts/run_dashboard.py --config config.yaml --port 8765
+```
+
+Open `http://127.0.0.1:8765`. It shows the current session (opening
+range, trades taken, standing-down status, last price) and the full
+trade journal - entry/exit time and price, contracts, risk, P&L, R
+multiple, and the bot's full reasoning for each trade (click a row to
+expand it). It's read-only: it just polls `logging.status_json` and
+`logging.trade_log_csv`, refreshing every 5 seconds, and does not place,
+modify, or cancel any orders. Keep `--host 127.0.0.1` (the default)
+unless you specifically want it reachable from other machines.
+
 ## Backtesting
 
 Feed it a CSV of historical 1-minute bars (`timestamp,open,high,low,close`,

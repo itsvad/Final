@@ -126,6 +126,7 @@ class RiskConfig:
 class LoggingConfig:
     log_dir: str = "./logs"
     trade_log_csv: str = "./logs/trades.csv"
+    status_json: str = "./logs/status.json"
     level: str = "INFO"
 
 

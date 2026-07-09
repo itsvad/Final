@@ -65,4 +65,6 @@ risk:
 logging:
   log_dir: ./logs
   trade_log_csv: ./logs/trades.csv
+  # Live status snapshot the local dashboard (scripts/run_dashboard.py) polls.
+  status_json: ./logs/status.json
   level: INFO

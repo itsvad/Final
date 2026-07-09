@@ -1,0 +1,285 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ORB Bot Dashboard</title>
+<style>
+  :root {
+    --bg: #0b0e14;
+    --panel: #131826;
+    --panel-border: #232a3d;
+    --text: #e6e9f0;
+    --text-dim: #8992a8;
+    --green: #3ecf8e;
+    --red: #f0616d;
+    --amber: #e8b339;
+    --blue: #5b8def;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #f4f5f8;
+      --panel: #ffffff;
+      --panel-border: #e2e5ec;
+      --text: #1a1d29;
+      --text-dim: #666e82;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    padding: 24px;
+  }
+  .wrap { max-width: 1100px; margin: 0 auto; }
+  header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 20px;
+    row-gap: 8px;
+  }
+  h1 { font-size: 20px; margin: 0; margin-right: auto; }
+  .badge {
+    font-size: 12px;
+    font-weight: 600;
+    padding: 4px 10px;
+    border-radius: 999px;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    white-space: nowrap;
+  }
+  .badge.demo { background: rgba(91,141,239,0.15); color: var(--blue); }
+  .badge.live { background: rgba(240,97,109,0.18); color: var(--red); }
+  .badge.dryrun { background: rgba(232,179,57,0.18); color: var(--amber); }
+  .badge.dot { display: inline-flex; align-items: center; gap: 6px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-dim); }
+  .dot.on { background: var(--green); box-shadow: 0 0 6px var(--green); }
+  .dot.off { background: var(--red); }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; margin-bottom: 24px; }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: 10px;
+    padding: 16px;
+  }
+  .card .label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-dim); margin-bottom: 6px; }
+  .card .value { font-size: 22px; font-weight: 600; }
+  .card .sub { font-size: 12px; color: var(--text-dim); margin-top: 4px; }
+
+  section { margin-bottom: 28px; }
+  section h2 { font-size: 14px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-dim); margin: 0 0 10px; }
+
+  table { width: 100%; border-collapse: collapse; background: var(--panel); border: 1px solid var(--panel-border); border-radius: 10px; overflow: hidden; }
+  th, td { text-align: left; padding: 10px 12px; font-size: 13px; border-bottom: 1px solid var(--panel-border); }
+  th { color: var(--text-dim); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; }
+  tr:last-child td { border-bottom: none; }
+  tr.reason-row { cursor: pointer; }
+  tr.reason-row:hover { background: rgba(91,141,239,0.06); }
+  .pnl-pos { color: var(--green); font-weight: 600; }
+  .pnl-neg { color: var(--red); font-weight: 600; }
+  .dir-long { color: var(--green); font-weight: 600; }
+  .dir-short { color: var(--red); font-weight: 600; }
+  .status-pill { font-size: 11px; padding: 2px 8px; border-radius: 999px; text-transform: uppercase; }
+  .status-open { background: rgba(232,179,57,0.18); color: var(--amber); }
+  .status-closed { background: rgba(139,148,168,0.15); color: var(--text-dim); }
+  .status-no_trade { background: rgba(139,148,168,0.15); color: var(--text-dim); }
+  .reason-detail { display: none; background: rgba(91,141,239,0.06); }
+  .reason-detail td { font-size: 12px; color: var(--text-dim); white-space: pre-wrap; }
+  .empty { padding: 24px; text-align: center; color: var(--text-dim); font-size: 13px; }
+  .stale { color: var(--amber); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>ORB Bot Dashboard</h1>
+    <span id="env-badge" class="badge demo">demo</span>
+    <span id="dryrun-badge" class="badge dryrun" style="display:none">dry run</span>
+    <span class="badge dot"><span id="conn-dot" class="dot off"></span><span id="conn-text">offline</span></span>
+  </header>
+
+  <div class="grid">
+    <div class="card">
+      <div class="label">Contract</div>
+      <div class="value" id="contract">-</div>
+      <div class="sub" id="risk-sub">-</div>
+    </div>
+    <div class="card">
+      <div class="label">Session date</div>
+      <div class="value" id="session-date">-</div>
+      <div class="sub" id="windows-sub">-</div>
+    </div>
+    <div class="card">
+      <div class="label">Opening range</div>
+      <div class="value" id="or-range">-</div>
+      <div class="sub" id="or-sub">-</div>
+    </div>
+    <div class="card">
+      <div class="label">Trades today</div>
+      <div class="value" id="trades-taken">-</div>
+      <div class="sub" id="standing-sub">-</div>
+    </div>
+    <div class="card">
+      <div class="label">Last price</div>
+      <div class="value" id="last-price">-</div>
+      <div class="sub" id="last-price-sub">-</div>
+    </div>
+  </div>
+
+  <section>
+    <h2>Trade journal</h2>
+    <table id="trades-table">
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Status</th>
+          <th>Dir</th>
+          <th>Entry</th>
+          <th>Stop / Target</th>
+          <th>Exit</th>
+          <th>Contracts</th>
+          <th>Risk $</th>
+          <th>P&amp;L</th>
+          <th>R</th>
+        </tr>
+      </thead>
+      <tbody id="trades-body"></tbody>
+    </table>
+  </section>
+</div>
+
+<script>
+const fmt = (n, d = 2) => (n === null || n === undefined || Number.isNaN(n)) ? '-' : Number(n).toFixed(d);
+const fmtTime = (iso) => {
+  if (!iso) return '-';
+  try {
+    const d = new Date(iso);
+    return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  } catch { return iso; }
+};
+
+async function fetchJSON(url) {
+  const res = await fetch(url, { cache: 'no-store' });
+  if (!res.ok) throw new Error(`${url} -> ${res.status}`);
+  return res.json();
+}
+
+function renderStatus(s) {
+  const envBadge = document.getElementById('env-badge');
+  const dryrunBadge = document.getElementById('dryrun-badge');
+  const connDot = document.getElementById('conn-dot');
+  const connText = document.getElementById('conn-text');
+
+  if (!s || !s.updated_at) {
+    connDot.className = 'dot off';
+    connText.textContent = 'no status.json yet - bot not running?';
+    return;
+  }
+
+  envBadge.textContent = s.environment || 'demo';
+  envBadge.className = 'badge ' + (s.environment === 'live' ? 'live' : 'demo');
+  dryrunBadge.style.display = s.dry_run ? 'inline-flex' : 'none';
+
+  const ageSec = (Date.now() - new Date(s.updated_at).getTime()) / 1000;
+  const stale = ageSec > 60 || !s.running;
+  const ageStr = ageSec < 90 ? `${Math.round(ageSec)}s`
+    : ageSec < 5400 ? `${Math.round(ageSec / 60)}m`
+    : `${Math.round(ageSec / 3600)}h`;
+  connDot.className = 'dot ' + (stale ? 'off' : 'on');
+  connText.textContent = stale
+    ? (s.running ? `stale (${ageStr} ago)` : 'stopped')
+    : 'live';
+  connText.className = stale ? 'stale' : '';
+
+  document.getElementById('contract').textContent = s.contract_name || s.symbol || '-';
+  document.getElementById('risk-sub').textContent =
+    `$${fmt(s.risk_amount_usd, 0)} risk - 1:${s.reward_risk_ratio ?? '?'} RR - max ${s.max_trades_per_session ?? '?'}/day`;
+
+  document.getElementById('session-date').textContent = s.session_date || '-';
+  document.getElementById('windows-sub').textContent =
+    `OR ${s.opening_range_start ?? '?'}-${s.opening_range_end ?? '?'} - window ${s.trading_window_start ?? '?'}-${s.trading_window_end ?? '?'} - flat by ${s.force_close_time ?? '?'}`;
+
+  document.getElementById('or-range').textContent = s.or_locked
+    ? `${fmt(s.or_high)} / ${fmt(s.or_low)}`
+    : (s.or_high !== null && s.or_high !== undefined ? 'marking...' : 'pending');
+  document.getElementById('or-sub').textContent = s.or_locked ? 'locked' : 'not yet locked';
+
+  document.getElementById('trades-taken').textContent = `${s.trades_taken ?? 0} / ${s.max_trades_per_session ?? '?'}`;
+  document.getElementById('standing-sub').textContent = s.standing_down ? 'standing down' : 'watching for breakout';
+
+  document.getElementById('last-price').textContent = fmt(s.last_price, 2);
+  document.getElementById('last-price-sub').textContent = s.last_price_at ? fmtTime(s.last_price_at) : '-';
+}
+
+function renderTrades(trades) {
+  const body = document.getElementById('trades-body');
+  body.innerHTML = '';
+
+  if (!trades.length) {
+    body.innerHTML = '<tr><td colspan="10" class="empty">No trades logged yet.</td></tr>';
+    return;
+  }
+
+  trades.forEach((t, i) => {
+    const row = document.createElement('tr');
+    row.className = 'reason-row';
+
+    if (t.status === 'no_trade') {
+      row.innerHTML = `
+        <td>${t.session_date}</td>
+        <td><span class="status-pill status-no_trade">no trade</span></td>
+        <td colspan="8"></td>`;
+    } else {
+      const dirClass = t.direction === 'long' ? 'dir-long' : 'dir-short';
+      const pnlClass = t.pnl_usd > 0 ? 'pnl-pos' : (t.pnl_usd < 0 ? 'pnl-neg' : '');
+      row.innerHTML = `
+        <td>${t.session_date}</td>
+        <td><span class="status-pill status-${t.status}">${t.status}</span></td>
+        <td class="${dirClass}">${(t.direction || '-').toUpperCase()}</td>
+        <td>${fmt(t.entry_price)}<br><span style="color:var(--text-dim);font-size:11px">${fmtTime(t.entry_time)}</span></td>
+        <td>${fmt(t.stop_price)} / ${fmt(t.target_price)}</td>
+        <td>${t.exit_price !== null ? fmt(t.exit_price) : '-'}<br><span style="color:var(--text-dim);font-size:11px">${fmtTime(t.exit_time)}</span></td>
+        <td>${t.contracts ?? '-'}</td>
+        <td>${fmt(t.total_risk_usd, 0)}</td>
+        <td class="${pnlClass}">${t.pnl_usd !== null ? '$' + fmt(t.pnl_usd) : '-'}</td>
+        <td class="${pnlClass}">${t.r_multiple !== null ? fmt(t.r_multiple) + 'R' : '-'}</td>`;
+    }
+    body.appendChild(row);
+
+    const detail = document.createElement('tr');
+    detail.className = 'reason-detail';
+    const detailText = [t.reason, t.exit_note].filter(Boolean).join('\n\nExit: ');
+    detail.innerHTML = `<td colspan="10">${detailText || 'No details recorded.'}</td>`;
+    body.appendChild(detail);
+
+    row.addEventListener('click', () => {
+      detail.style.display = detail.style.display === 'table-row' ? 'none' : 'table-row';
+    });
+  });
+}
+
+async function refresh() {
+  try {
+    const status = await fetchJSON('/api/status');
+    renderStatus(status);
+  } catch (e) {
+    document.getElementById('conn-text').textContent = 'dashboard error';
+  }
+  try {
+    const trades = await fetchJSON('/api/trades');
+    renderTrades(trades);
+  } catch (e) {
+    // leave table as-is on transient errors
+  }
+}
+
+refresh();
+setInterval(refresh, 5000);
+</script>
+</body>
+</html>

@@ -10,6 +10,7 @@ from orb_bot.config import BotConfig, load_config
 from orb_bot.contracts import resolve_spec
 from orb_bot.orb_strategy import OrbStrategy
 from orb_bot.session import SessionClock
+from orb_bot.status import BotStatus, StatusWriter
 from orb_bot.trade_log import TradeLog
 from orb_bot.tradovate_client import (
     TradovateExecutor,
@@ -25,6 +26,7 @@ logger = logging.getLogger(__name__)
 # fires on time.
 HEARTBEAT_SECONDS = 15
 TOKEN_RENEW_SECONDS = 60 * 60  # renew well before Tradovate's ~80 min expiry
+STATUS_WRITE_SECONDS = 5  # how often the dashboard's status.json is refreshed
 
 
 class LiveRunner:
@@ -37,7 +39,10 @@ class LiveRunner:
         )
         self.rest = TradovateREST(config.credentials, config.account.environment)
         self.trade_log = TradeLog(config.logging.trade_log_csv)
+        self.status_writer = StatusWriter(config.logging.status_json)
         self._last_price: float | None = None
+        self._last_price_at: datetime | None = None
+        self._contract_name: str | None = None
         self._running = False
 
     def _resolve_contract(self) -> tuple[str, int]:
@@ -52,6 +57,7 @@ class LiveRunner:
 
     def _on_price(self, ts: datetime, price: float) -> None:
         self._last_price = price
+        self._last_price_at = ts
         self.strategy.on_market_data(ts, high=price, low=price, close=price)
 
     def _on_fill(self, fill: dict) -> None:
@@ -91,6 +97,43 @@ class LiveRunner:
             except Exception:
                 logger.exception("Failed to renew Tradovate access token")
 
+    def _write_status(self) -> None:
+        state = self.strategy.state
+        session = self.config.session
+        status = BotStatus(
+            updated_at=datetime.now(timezone.utc).isoformat(),
+            running=self._running,
+            environment=self.config.account.environment,
+            dry_run=self.config.account.dry_run,
+            symbol=self.config.contract.symbol,
+            contract_name=self._contract_name,
+            risk_amount_usd=self.config.risk.risk_amount_usd,
+            reward_risk_ratio=self.config.strategy.reward_risk_ratio,
+            max_trades_per_session=session.max_trades_per_session,
+            opening_range_start=str(session.opening_range_start),
+            opening_range_end=str(session.opening_range_end),
+            trading_window_start=str(session.trading_window_start),
+            trading_window_end=str(session.trading_window_end),
+            force_close_time=str(session.force_close_time),
+            session_date=state.session_date.isoformat() if state.session_date else None,
+            or_high=state.or_high,
+            or_low=state.or_low,
+            or_locked=state.or_locked,
+            trades_taken=state.trades_taken,
+            standing_down=state.standing_down,
+            last_price=self._last_price,
+            last_price_at=self._last_price_at.isoformat() if self._last_price_at else None,
+        )
+        self.status_writer.write(status)
+
+    def _status_loop(self) -> None:
+        while self._running:
+            try:
+                self._write_status()
+            except Exception:
+                logger.exception("Failed to write status.json")
+            time_module.sleep(STATUS_WRITE_SECONDS)
+
     def run(self) -> None:
         import threading
 
@@ -98,6 +141,7 @@ class LiveRunner:
         account_id = self.rest.resolve_account_id(self.config.account.account_spec)
         account_spec = self.config.account.account_spec or self.rest.list_accounts()[0]["name"]
         contract_name, contract_id = self._resolve_contract()
+        self._contract_name = contract_name
 
         self.executor = TradovateExecutor(
             rest=self.rest,
@@ -129,10 +173,13 @@ class LiveRunner:
             user_stream.start()
 
         self._running = True
+        self._write_status()  # initial snapshot so the dashboard has something immediately
         heartbeat_thread = threading.Thread(target=self._heartbeat_loop, daemon=True)
         renew_thread = threading.Thread(target=self._token_renew_loop, daemon=True)
+        status_thread = threading.Thread(target=self._status_loop, daemon=True)
         heartbeat_thread.start()
         renew_thread.start()
+        status_thread.start()
 
         try:
             while self._running:
@@ -144,6 +191,7 @@ class LiveRunner:
             stream.stop()
             if user_stream is not None:
                 user_stream.stop()
+            self.status_writer.write_stopped()
 
 
 def main() -> None:
