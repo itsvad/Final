@@ -15,7 +15,7 @@ so results aren't over-trusted):
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime
 from typing import Optional
 
 from orb_bot.config import BotConfig
@@ -28,15 +28,20 @@ from orb_bot.session import SessionClock
 class CompletedTrade:
     session_date: date
     direction: str
+    entry_time: datetime
     entry_price: float
     stop_price: float
     target_price: float
+    exit_time: datetime
     exit_price: float
     exit_reason: str  # "target" | "stop" | "force_flatten" | "eod_close"
+    exit_description: str
     contracts: int
     risk_per_contract_usd: float
+    total_risk_usd: float
     pnl_usd: float
     r_multiple: float
+    entry_reason: str  # why the bot took the trade
 
 
 class SimExecutor(TradeExecutor):
@@ -54,16 +59,16 @@ class SimExecutor(TradeExecutor):
     def no_trade_today(self, session_date: date, reason: str) -> None:
         self.no_trade_days.append((session_date, reason))
 
-    def flatten(self, session_date: date, price: float, reason: str) -> None:
+    def flatten(self, session_date: date, ts: datetime, price: float, reason: str) -> None:
         if self._open is None:
             return
         signal: TradeSignal = self._open["signal"]
-        self._finish(signal, price, "force_flatten")
+        self._finish(signal, ts, price, "force_flatten", reason)
 
     def has_open_trade(self) -> bool:
         return self._open is not None
 
-    def resolve_bar(self, high: float, low: float, close: float) -> None:
+    def resolve_bar(self, ts: datetime, high: float, low: float, close: float) -> None:
         if self._open is None:
             return
         signal: TradeSignal = self._open["signal"]
@@ -83,9 +88,10 @@ class SimExecutor(TradeExecutor):
 
         exit_price = signal.stop_price if hit_stop else signal.target_price
         exit_reason = "stop" if hit_stop else "target"
-        self._finish(signal, exit_price, exit_reason)
+        exit_description = "Stop-loss hit" if hit_stop else "Take-profit target hit"
+        self._finish(signal, ts, exit_price, exit_reason, exit_description)
 
-    def force_close_eod(self, close_price: float) -> None:
+    def force_close_eod(self, ts: datetime, close_price: float) -> None:
         """Fallback for when the day's data ends before force_close_time is
         reached (e.g. an incomplete/partial data feed) - the strategy itself
         already flattens open trades at session.force_close_time via
@@ -93,9 +99,20 @@ class SimExecutor(TradeExecutor):
         if self._open is None:
             return
         signal: TradeSignal = self._open["signal"]
-        self._finish(signal, close_price, "eod_close")
+        self._finish(
+            signal, ts, close_price, "eod_close",
+            "Session data ended before the flatten time was reached; "
+            "marked-to-market at the last available bar (backtest data limitation).",
+        )
 
-    def _finish(self, signal: TradeSignal, exit_price: float, reason: str) -> None:
+    def _finish(
+        self,
+        signal: TradeSignal,
+        exit_time: datetime,
+        exit_price: float,
+        exit_reason: str,
+        exit_description: str,
+    ) -> None:
         direction_sign = 1 if signal.direction == "long" else -1
         price_pnl = (exit_price - signal.entry_price) * direction_sign
         pnl_usd = price_pnl * (signal.risk_per_contract_usd / abs(signal.entry_price - signal.stop_price)) * signal.contracts
@@ -106,15 +123,20 @@ class SimExecutor(TradeExecutor):
             CompletedTrade(
                 session_date=signal.session_date,
                 direction=signal.direction,
+                entry_time=signal.signal_time,
                 entry_price=signal.entry_price,
                 stop_price=signal.stop_price,
                 target_price=signal.target_price,
+                exit_time=exit_time,
                 exit_price=exit_price,
-                exit_reason=reason,
+                exit_reason=exit_reason,
+                exit_description=exit_description,
                 contracts=signal.contracts,
                 risk_per_contract_usd=signal.risk_per_contract_usd,
+                total_risk_usd=signal.total_risk_usd,
                 pnl_usd=pnl_usd,
                 r_multiple=r_multiple,
+                entry_reason=signal.reason,
             )
         )
         self._open = None
@@ -133,14 +155,16 @@ def run_backtest(config: BotConfig, spec: ContractSpec, bars_df) -> "BacktestRep
         strategy = OrbStrategy(config, spec, executor, clock)
 
         last_close = None
+        last_ts = None
         for bar in bars:
             ts, o, h, l, c = bar["timestamp"], bar["open"], bar["high"], bar["low"], bar["close"]
             strategy.on_market_data(ts, high=h, low=l, open_=o, close=c)
-            executor.resolve_bar(h, l, c)
+            executor.resolve_bar(ts, h, l, c)
             last_close = c
+            last_ts = ts
 
         if executor.has_open_trade() and last_close is not None:
-            executor.force_close_eod(last_close)
+            executor.force_close_eod(last_ts, last_close)
 
         all_trades.extend(executor.completed_trades)
         all_no_trade_days.extend(executor.no_trade_days)

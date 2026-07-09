@@ -77,9 +77,10 @@ class BacktestReport:
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         fieldnames = list(asdict(self.trades[0]).keys()) if self.trades else [
-            "session_date", "direction", "entry_price", "stop_price", "target_price",
-            "exit_price", "exit_reason", "contracts", "risk_per_contract_usd",
-            "pnl_usd", "r_multiple",
+            "session_date", "direction", "entry_time", "entry_price", "stop_price",
+            "target_price", "exit_time", "exit_price", "exit_reason", "exit_description",
+            "contracts", "risk_per_contract_usd", "total_risk_usd", "pnl_usd", "r_multiple",
+            "entry_reason",
         ]
         with path.open("w", newline="", encoding="utf-8") as fh:
             writer = csv.DictWriter(fh, fieldnames=fieldnames)
@@ -87,4 +88,6 @@ class BacktestReport:
             for t in self.trades:
                 row = asdict(t)
                 row["session_date"] = row["session_date"].isoformat()
+                row["entry_time"] = row["entry_time"].isoformat()
+                row["exit_time"] = row["exit_time"].isoformat()
                 writer.writerow(row)

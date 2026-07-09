@@ -54,6 +54,7 @@ class TradeSignal:
     or_high: float
     or_low: float
     signal_time: datetime
+    reason: str              # human-readable explanation of why this trade was taken
 
 
 class TradeExecutor(Protocol):
@@ -63,7 +64,7 @@ class TradeExecutor(Protocol):
 
     def no_trade_today(self, session_date: date, reason: str) -> None: ...
 
-    def flatten(self, session_date: date, price: float, reason: str) -> None: ...
+    def flatten(self, session_date: date, ts: datetime, price: float, reason: str) -> None: ...
 
 
 @dataclass
@@ -134,7 +135,11 @@ class OrbStrategy:
                     flatten_price,
                     self.config.session.force_close_time,
                 )
-                self.executor.flatten(state.session_date, flatten_price, "session flatten time reached")
+                self.executor.flatten(
+                    state.session_date, ts, flatten_price,
+                    f"Held past session.force_close_time ({self.config.session.force_close_time}) "
+                    "without hitting stop or target - closed flat regardless of P&L.",
+                )
             return
 
         if state.standing_down:
@@ -253,6 +258,23 @@ class OrbStrategy:
         else:
             target_price = entry_price - risk_distance * rr
 
+        side = "above" if direction == "long" else "below"
+        or_side_price = state.or_high if direction == "long" else state.or_low
+        reason = (
+            f"Opening range ({self.config.session.opening_range_start}-"
+            f"{self.config.session.opening_range_end} {self.config.session.timezone}) "
+            f"marked high={state.or_high:.4f} / low={state.or_low:.4f}. Price traded "
+            f"{self.config.strategy.entry_trigger_ticks} tick(s) {side} the OR "
+            f"{'high' if direction == 'long' else 'low'} ({or_side_price:.4f}) during the trading "
+            f"window ({self.config.session.trading_window_start}-{self.config.session.trading_window_end}), "
+            f"triggering a {direction.upper()} entry at {entry_price:.4f}. Stop placed "
+            f"{self.config.strategy.stop_ticks} tick(s) beyond the opposite side at {stop_price:.4f} "
+            f"(risk of ${sizing.risk_per_contract_usd:.2f}/contract). Sized {sizing.contracts} contract(s) "
+            f"from a ${self.config.risk.risk_amount_usd:.2f} risk budget (total risk "
+            f"${sizing.total_risk_usd:.2f}). Target set at {rr:.2f}x risk (1:{rr:g} reward:risk) = "
+            f"{target_price:.4f}."
+        )
+
         signal = TradeSignal(
             session_date=state.session_date,
             direction=direction,
@@ -265,6 +287,7 @@ class OrbStrategy:
             or_high=state.or_high,
             or_low=state.or_low,
             signal_time=ts,
+            reason=reason,
         )
 
         state.trades_taken += 1

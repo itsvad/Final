@@ -11,7 +11,12 @@ from orb_bot.contracts import resolve_spec
 from orb_bot.orb_strategy import OrbStrategy
 from orb_bot.session import SessionClock
 from orb_bot.trade_log import TradeLog
-from orb_bot.tradovate_client import TradovateExecutor, TradovateQuoteStream, TradovateREST
+from orb_bot.tradovate_client import (
+    TradovateExecutor,
+    TradovateQuoteStream,
+    TradovateREST,
+    TradovateUserDataStream,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +54,23 @@ class LiveRunner:
         self._last_price = price
         self.strategy.on_market_data(ts, high=price, low=price, close=price)
 
+    def _on_fill(self, fill: dict) -> None:
+        contract_id = fill.get("contractId")
+        action = fill.get("action")
+        price = fill.get("price")
+        if contract_id is None or action is None or price is None:
+            return
+        ts_raw = fill.get("timestamp")
+        try:
+            fill_time = (
+                datetime.fromisoformat(str(ts_raw).replace("Z", "+00:00"))
+                if ts_raw
+                else datetime.now(timezone.utc)
+            )
+        except ValueError:
+            fill_time = datetime.now(timezone.utc)
+        self.executor.on_order_fill(contract_id, action, float(price), fill_time)
+
     def _heartbeat_loop(self) -> None:
         while self._running:
             time_module.sleep(HEARTBEAT_SECONDS)
@@ -77,7 +99,7 @@ class LiveRunner:
         account_spec = self.config.account.account_spec or self.rest.list_accounts()[0]["name"]
         contract_name, contract_id = self._resolve_contract()
 
-        executor = TradovateExecutor(
+        self.executor = TradovateExecutor(
             rest=self.rest,
             trade_log=self.trade_log,
             account_id=account_id,
@@ -90,7 +112,7 @@ class LiveRunner:
             dry_run=self.config.account.dry_run,
         )
         self.strategy = OrbStrategy(
-            self.config, self.spec, executor, SessionClock(self.config.session)
+            self.config, self.spec, self.executor, SessionClock(self.config.session)
         )
 
         if self.config.account.dry_run:
@@ -98,6 +120,13 @@ class LiveRunner:
 
         stream = TradovateQuoteStream(self.rest.tokens.md_access_token, self._on_price)
         stream.start(contract_name)
+
+        user_stream = None
+        if not self.config.account.dry_run and self.rest.user_id is not None:
+            user_stream = TradovateUserDataStream(
+                self.config.account.environment, self.rest.tokens.access_token, self.rest.user_id, self._on_fill
+            )
+            user_stream.start()
 
         self._running = True
         heartbeat_thread = threading.Thread(target=self._heartbeat_loop, daemon=True)
@@ -113,6 +142,8 @@ class LiveRunner:
         finally:
             self._running = False
             stream.stop()
+            if user_stream is not None:
+                user_stream.stop()
 
 
 def main() -> None:

@@ -28,8 +28,8 @@ class FakeExecutor:
     def no_trade_today(self, session_date, reason):
         self.no_trades.append((session_date, reason))
 
-    def flatten(self, session_date, price, reason):
-        self.flattens.append((session_date, price, reason))
+    def flatten(self, session_date, ts, price, reason):
+        self.flattens.append((session_date, ts, price, reason))
 
 
 def make_config(**overrides):
@@ -111,6 +111,9 @@ def test_long_breakout_enters_with_correct_stop_and_target():
     risk_distance = signal.entry_price - signal.stop_price
     assert signal.target_price == pytest.approx(signal.entry_price + risk_distance)  # 1:1 RR
     assert signal.contracts >= 1
+    assert "LONG" in signal.reason
+    assert "5002.25" in signal.reason  # entry price mentioned
+    assert str(signal.contracts) in signal.reason
 
 
 def test_short_breakout_enters_with_correct_stop_and_target():
@@ -238,9 +241,10 @@ def test_open_trade_is_flattened_at_force_close_time():
 
     strat.on_market_data(ny(15, 55), high=5045.0, low=5044.0, close=5044.5)
     assert len(executor.flattens) == 1
-    session_date, price, reason = executor.flattens[0]
+    session_date, ts, price, reason = executor.flattens[0]
     assert price == pytest.approx(5044.5)
-    assert "flatten" in reason.lower()
+    assert ts == ny(15, 55)
+    assert "force_close_time" in reason or "flatten" in reason.lower()
 
     # Flatten only fires once even with more ticks after the close time
     strat.on_market_data(ny(15, 58), high=5046.0, low=5045.0, close=5045.5)
