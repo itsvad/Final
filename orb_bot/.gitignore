@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+venv/
+.venv/
+
+# secrets / personal config - copy from the .example files instead
+.env
+config.yaml
+
+# runtime output
+logs/
+*.egg-info/

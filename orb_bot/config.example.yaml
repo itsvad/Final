@@ -1,0 +1,65 @@
+# ------------------------------------------------------------------
+# ORB Bot configuration. Copy this file to config.yaml and edit it.
+# Every value below is a user-adjustable setting.
+# ------------------------------------------------------------------
+
+account:
+  # "demo" (paper trading) or "live" (real money). Always test on demo first.
+  environment: demo
+  # Tradovate account "name" to trade, e.g. "DEMO123456". Leave null to
+  # auto-select if your login only has one account.
+  account_spec: null
+  # true = strategy runs and logs signals/orders but never sends real
+  # orders to Tradovate. Keep this true until you've verified behavior.
+  dry_run: true
+
+contract:
+  # Root symbol to trade, e.g. MES, MNQ, ES, NQ, GC, CL...
+  symbol: MES
+  # Exact contract name e.g. "MESU5". Leave null to auto-resolve the
+  # front-month contract for `symbol` at startup.
+  contract_name: null
+  # Tick size / tick value. Leave null to use the built-in lookup table
+  # in orb_bot/contracts.py (covers common CME/CBOT/NYMEX/COMEX futures).
+  # Set explicitly here to override the table or to support a symbol
+  # that isn't in it.
+  tick_size: null
+  tick_value: null
+
+session:
+  timezone: America/New_York
+  # Opening range window: high/low are marked from here...
+  opening_range_start: "09:30"
+  opening_range_end: "09:45"
+  # ...and breakouts are only traded inside this window.
+  trading_window_start: "09:45"
+  trading_window_end: "11:30"
+  # Only take this many trades per NY session, then stand down for the day.
+  max_trades_per_session: 1
+
+strategy:
+  # Enter this many ticks beyond the opening-range high/low.
+  entry_trigger_ticks: 1
+  # Place the stop this many ticks beyond the opposite side of the range.
+  stop_ticks: 1
+  # Profit target = risk distance * this multiple. 1.0 = 1:1 R:R.
+  reward_risk_ratio: 1.0
+  # "stop_market" (recommended) or "stop_limit".
+  entry_order_type: stop_market
+  # Only used when entry_order_type is stop_limit: how many extra ticks
+  # of slippage the limit price allows past the stop trigger.
+  stop_limit_offset_ticks: 2
+
+risk:
+  # Dollar risk you're willing to take on the single trade this session.
+  risk_amount_usd: 600.0
+  # Hard safety ceiling on contract count regardless of the risk math.
+  max_contracts: 10
+  # Minimum contracts required to take the trade at all. If the risk
+  # math rounds down below this, the signal is skipped (no trade).
+  min_contracts: 1
+
+logging:
+  log_dir: ./logs
+  trade_log_csv: ./logs/trades.csv
+  level: INFO
