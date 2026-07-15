@@ -1,5 +1,6 @@
 data/*.csv
 results/*.csv
 results/*.txt
+results/*.html
 __pycache__/
 *.pyc

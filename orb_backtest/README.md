@@ -54,8 +54,21 @@ This will:
 1. Download (and locally cache under `data/`) 1-minute bars for the date
    range, so re-running the same range later doesn't re-download.
 2. Run the ORB simulation across every trading day in range.
-3. Write `results/trades.csv` (one row per trade) and `results/summary.txt`
-   (aggregate stats), and print the summary to the console.
+3. Write `results/trades.csv` (one row per trade), `results/summary.txt`
+   (aggregate stats), and `results/report.html` (a self-contained visual
+   report — stat tiles, an equity curve, and the full trade log), and print
+   the summary to the console.
+
+Open `results/report.html` directly in a browser — it has no external
+dependencies (no CDN, no build step). It shows:
+- Trade counts (wins / losses / breakeven), win rate, average R multiple,
+  profit factor, total P&L, return %, ending equity, and max drawdown as
+  stat tiles.
+- An equity curve (hover any point for the trade date, P&L, and running
+  equity).
+- A trade log table: date, direction, entry/exit time and price, exit
+  reason, outcome, R multiple, P&L, and the equity balance right after that
+  trade closed.
 
 ### Key options
 
@@ -124,5 +137,8 @@ python main.py --symbol ESUSD --start 2025-01-01 --end 2025-12-31 \
 - `data.py` — FMP fetch + local CSV cache (`data/<SYMBOL>_1min.csv`)
 - `engine.py` — the ORB simulation (opening range, entries, stop/target/
   breakeven/time-exit logic, position sizing)
-- `main.py` — CLI: wires data + engine together, computes summary stats,
-  writes `results/trades.csv` and `results/summary.txt`
+- `report.py` — builds `results/report.html` (stat tiles, equity curve,
+  trade log) from the backtest results
+- `main.py` — CLI: wires data + engine + report together, computes summary
+  stats, writes `results/trades.csv`, `results/summary.txt`, and
+  `results/report.html`

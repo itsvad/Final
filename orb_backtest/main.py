@@ -20,6 +20,7 @@ import pandas as pd
 
 from data import load_bars
 from engine import ORBConfig, run_backtest
+from report import generate_html_report
 
 
 def parse_time(s: str) -> dtime:
@@ -166,6 +167,22 @@ def main(argv=None):
     trades_csv = out_dir / "trades.csv"
     trades_df.to_csv(trades_csv, index=False)
 
+    report_path = out_dir / "report.html"
+    generate_html_report(
+        trades_df,
+        stats,
+        cfg,
+        meta={
+            "symbol": args.symbol,
+            "start": args.start,
+            "end": args.end,
+            "or_minutes": args.or_minutes,
+            "cutoff_entry": args.cutoff_entry,
+            "flat_time": args.flat_time,
+        },
+        out_path=report_path,
+    )
+
     lines = [
         f"ORB Backtest Summary — {args.symbol}  {args.start} to {args.end}",
         "=" * 60,
@@ -185,6 +202,7 @@ def main(argv=None):
         f"Max drawdown:          ${stats['max_drawdown']:,.2f}  ({stats['max_drawdown_pct']:.2f}%)",
         "=" * 60,
         f"Trade log written to:  {trades_csv}",
+        f"HTML report written to: {report_path}",
     ]
     summary_text = "\n".join(lines)
     print(summary_text)
