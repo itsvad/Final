@@ -1,0 +1,5 @@
+data/*.csv
+results/*.csv
+results/*.txt
+__pycache__/
+*.pyc
